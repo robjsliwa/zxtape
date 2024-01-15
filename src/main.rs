@@ -156,7 +156,7 @@ struct Block {
 
 impl Block {
     fn from_bytes(reader: &mut BufReader<File>) -> Result<Block, Error> {
-        println!("CHECK0");
+        let mut blocks: Vec<Block> = Vec::new();
         let len_block = reader.read_u16::<LittleEndian>()?;
         let flag = FlagEnum::from_u8(reader.read_u8()?)
             .ok_or(Error::new(ErrorKind::InvalidData, "Invalid flag"))?;
@@ -206,9 +206,12 @@ fn main() -> io::Result<()> {
     let file = File::open(filename)?;
     let mut reader = BufReader::new(file);
 
+    let mut blocks: Vec<Block> = Vec::new();
+
     while !reader.fill_buf()?.is_empty() {
         let block = Block::from_bytes(&mut reader)?;
         println!("{:?}", block);
+        blocks.push(block);
     }
 
     Ok(())
