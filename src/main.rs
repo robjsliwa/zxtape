@@ -1,4 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
+use rodio::{source::Source, OutputStream, Sink};
 use std::env;
 use std::fs::File;
 use std::io::BufRead;
@@ -196,6 +197,54 @@ impl Block {
     }
 }
 
+// This function converts the binary data into a vector of f32 samples representing audio pulses
+fn convert_bits_to_pulses(data: &[u8], sample_rate: u32) -> Vec<f32> {
+    let mut pulses = Vec::new();
+
+    // Define pulse frequencies and durations (in microseconds)
+    let freq_zero = 1500.0; // Frequency for 0 bit
+    let freq_one = 3000.0; // Frequency for 1 bit
+    let duration_zero = 855.0; // Duration for 0 bit in microseconds
+    let duration_one = 1710.0; // Duration for 1 bit in microseconds
+
+    for &byte in data {
+        for i in 0..8 {
+            let bit = (byte >> i) & 1;
+            let (freq, duration) = if bit == 0 {
+                (freq_zero, duration_zero)
+            } else {
+                (freq_one, duration_one)
+            };
+
+            // Convert duration from microseconds to sample count
+            let sample_count = (duration / 1_000_000.0) * sample_rate as f32;
+
+            // Generate the square wave for the bit
+            for s in 0..sample_count as usize {
+                let value = if (s as f32 * freq / sample_rate as f32 * 2.0 * std::f32::consts::PI)
+                    .sin()
+                    > 0.0
+                {
+                    1.0
+                } else {
+                    -1.0
+                };
+                pulses.push(value);
+            }
+        }
+    }
+
+    pulses
+}
+
+fn play_audio_data(data: &[f32]) {
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let source = rodio::buffer::SamplesBuffer::new(1, 44100, data);
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    sink.append(source);
+    sink.sleep_until_end();
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -212,6 +261,13 @@ fn main() -> io::Result<()> {
         let block = Block::from_bytes(&mut reader)?;
         println!("{:?}", block);
         blocks.push(block);
+    }
+
+    for block in blocks {
+        if let Some(data) = block.data {
+            let audio_data = convert_bits_to_pulses(&data, 44100); // 44.1 kHz sample rate
+            play_audio_data(&audio_data);
+        }
     }
 
     Ok(())
